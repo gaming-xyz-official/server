@@ -8,6 +8,9 @@ const cors = require("cors");
 
 const app = express();
 
+// =============================
+// MIDDLEWARE
+// =============================
 app.use(express.json());
 app.use(cors());
 
@@ -26,7 +29,7 @@ const userSchema = new mongoose.Schema({
   password: String,
   role: {
     type: String,
-    default: "user" // or "admin"
+    default: "user"
   }
 });
 
@@ -37,12 +40,17 @@ const User = mongoose.model("User", userSchema);
 // =============================
 function verifyToken(req, res, next) {
   const header = req.headers.authorization;
-  if (!header) return res.status(401).json({ message: "No token" });
+
+  if (!header) {
+    return res.status(401).json({ message: "No token" });
+  }
 
   const token = header.split(" ")[1];
 
   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err) return res.status(403).json({ message: "Invalid token" });
+    if (err) {
+      return res.status(403).json({ message: "Invalid token" });
+    }
     req.user = decoded;
     next();
   });
@@ -59,14 +67,19 @@ function verifyAdmin(req, res, next) {
 // REGISTER
 // =============================
 app.post("/register", async (req, res) => {
-  const { username, password } = req.body;
-
-  const hashed = await bcrypt.hash(password, 10);
-
   try {
-    await User.create({ username, password: hashed });
+    const { username, password } = req.body;
+
+    const hashed = await bcrypt.hash(password, 10);
+
+    await User.create({
+      username,
+      password: hashed
+    });
+
     res.json({ message: "Registered" });
-  } catch {
+
+  } catch (err) {
     res.status(400).json({ message: "User exists" });
   }
 });
@@ -75,51 +88,76 @@ app.post("/register", async (req, res) => {
 // LOGIN
 // =============================
 app.post("/login", async (req, res) => {
-  const { username, password } = req.body;
+  try {
+    const { username, password } = req.body;
 
-  const user = await User.findOne({ username });
-  if (!user) return res.status(401).json({ message: "Invalid" });
+    const user = await User.findOne({ username });
+    if (!user) return res.status(401).json({ message: "Invalid" });
 
-  const match = await bcrypt.compare(password, user.password);
-  if (!match) return res.status(401).json({ message: "Invalid" });
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(401).json({ message: "Invalid" });
 
-  const token = jwt.sign(
-    {
-      id: user._id,
-      username: user.username,
+    const token = jwt.sign(
+      {
+        id: user._id,
+        username: user.username,
+        role: user.role
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "2h" }
+    );
+
+    res.json({
+      token,
       role: user.role
-    },
-    process.env.JWT_SECRET,
-    { expiresIn: "2h" }
-  );
+    });
 
-  res.json({ token, role: user.role });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
 });
 
 // =============================
 // ADMIN ROUTES
 // =============================
 
-// GET ALL USERS
+// GET USERS
 app.get("/admin/users", verifyToken, verifyAdmin, async (req, res) => {
-  const users = await User.find().select("-password");
-  res.json(users);
+  try {
+    const users = await User.find().select("-password");
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ message: "Error fetching users" });
+  }
 });
 
 // DELETE USER
 app.delete("/admin/user/:id", verifyToken, verifyAdmin, async (req, res) => {
-  if (req.params.id === req.user.id) {
-    return res.json({ message: "You can't delete yourself" });
-  }
+  try {
+    if (req.params.id === req.user.id) {
+      return res.json({ message: "You can't delete yourself" });
+    }
 
-  await User.findByIdAndDelete(req.params.id);
-  res.json({ message: "Deleted" });
+    await User.findByIdAndDelete(req.params.id);
+    res.json({ message: "Deleted" });
+
+  } catch (err) {
+    res.status(500).json({ message: "Error deleting user" });
+  }
 });
 
+// =============================
+// ROOT
 // =============================
 app.get("/", (req, res) => {
   res.send("Server running ✅");
 });
 
 // =============================
-app.listen(3000, () => console.log("Server started 🚀"));
+// START SERVER
+// =============================
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`Server started on port ${PORT} 🚀`);
+});
