@@ -25,6 +25,7 @@ mongoose.connect(process.env.MONGO_URI)
 // USER SCHEMA
 // =============================
 const userSchema = new mongoose.Schema({
+  name: { type: String, required: true }, // ✅ ADDED
   username: { type: String, unique: true },
   password: String,
   role: {
@@ -68,16 +69,22 @@ function verifyAdmin(req, res, next) {
 // =============================
 app.post("/register", async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { name, username, password } = req.body;
+
+    // ✅ Validation
+    if (!name || !username || !password) {
+      return res.status(400).json({ message: "All fields required" });
+    }
 
     const hashed = await bcrypt.hash(password, 10);
 
     await User.create({
+      name,
       username,
       password: hashed
     });
 
-    res.json({ message: "Registered" });
+    res.json({ message: "Registered successfully ✅" });
 
   } catch (err) {
     res.status(400).json({ message: "User exists" });
@@ -101,7 +108,8 @@ app.post("/login", async (req, res) => {
       {
         id: user._id,
         username: user.username,
-        role: user.role
+        role: user.role,
+        name: user.name // ✅ ADDED (useful later)
       },
       process.env.JWT_SECRET,
       { expiresIn: "2h" }
@@ -109,7 +117,8 @@ app.post("/login", async (req, res) => {
 
     res.json({
       token,
-      role: user.role
+      role: user.role,
+      name: user.name // ✅ send name to frontend
     });
 
   } catch (err) {
