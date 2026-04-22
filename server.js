@@ -46,11 +46,16 @@ function verifyToken(req, res, next) {
     return res.status(401).json({ message: "No token" });
   }
 
+  // ✅ IMPORTANT: Extract token after "Bearer "
   const token = header.split(" ")[1];
+
+  if (!token) {
+    return res.status(401).json({ message: "Invalid token format" });
+  }
 
   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
     if (err) {
-      return res.status(403).json({ message: "Invalid token" });
+      return res.status(403).json({ message: "Invalid or expired token" });
     }
     req.user = decoded;
     next();
@@ -65,6 +70,16 @@ function verifyAdmin(req, res, next) {
 }
 
 // =============================
+// 🔥 VERIFY ROUTE (MOST IMPORTANT FIX)
+// =============================
+app.get("/verify", verifyToken, (req, res) => {
+  res.json({
+    message: "Token valid ✅",
+    user: req.user
+  });
+});
+
+// =============================
 // REGISTER
 // =============================
 app.post("/register", async (req, res) => {
@@ -73,6 +88,11 @@ app.post("/register", async (req, res) => {
 
     if (!name || !username || !password) {
       return res.status(400).json({ message: "All fields required" });
+    }
+
+    const existingUser = await User.findOne({ username });
+    if (existingUser) {
+      return res.status(400).json({ message: "User already exists ❌" });
     }
 
     const hashed = await bcrypt.hash(password, 10);
@@ -86,22 +106,26 @@ app.post("/register", async (req, res) => {
     res.json({ message: "Registered successfully ✅" });
 
   } catch (err) {
-    res.status(400).json({ message: "User already exists ❌" });
+    res.status(500).json({ message: "Server error" });
   }
 });
 
 // =============================
-// LOGIN (✅ FIXED)
+// LOGIN
 // =============================
 app.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
 
     const user = await User.findOne({ username });
-    if (!user) return res.status(401).json({ message: "Invalid credentials ❌" });
+    if (!user) {
+      return res.status(401).json({ message: "Invalid credentials ❌" });
+    }
 
     const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.status(401).json({ message: "Invalid credentials ❌" });
+    if (!match) {
+      return res.status(401).json({ message: "Invalid credentials ❌" });
+    }
 
     const token = jwt.sign(
       {
@@ -114,7 +138,6 @@ app.post("/login", async (req, res) => {
       { expiresIn: "2h" }
     );
 
-    // ✅ FIX: send username also
     res.json({
       token,
       role: user.role,
@@ -139,7 +162,6 @@ app.post("/change-password", verifyToken, async (req, res) => {
     }
 
     const user = await User.findById(req.user.id);
-
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
