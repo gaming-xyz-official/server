@@ -25,7 +25,7 @@ mongoose.connect(process.env.MONGO_URI)
 // USER SCHEMA
 // =============================
 const userSchema = new mongoose.Schema({
-  name: { type: String, required: true }, // ✅ ADDED
+  name: { type: String, required: true },
   username: { type: String, unique: true },
   password: String,
   role: {
@@ -71,7 +71,6 @@ app.post("/register", async (req, res) => {
   try {
     const { name, username, password } = req.body;
 
-    // ✅ Validation
     if (!name || !username || !password) {
       return res.status(400).json({ message: "All fields required" });
     }
@@ -87,7 +86,7 @@ app.post("/register", async (req, res) => {
     res.json({ message: "Registered successfully ✅" });
 
   } catch (err) {
-    res.status(400).json({ message: "User exists" });
+    res.status(400).json({ message: "User already exists ❌" });
   }
 });
 
@@ -99,17 +98,17 @@ app.post("/login", async (req, res) => {
     const { username, password } = req.body;
 
     const user = await User.findOne({ username });
-    if (!user) return res.status(401).json({ message: "Invalid" });
+    if (!user) return res.status(401).json({ message: "Invalid credentials ❌" });
 
     const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.status(401).json({ message: "Invalid" });
+    if (!match) return res.status(401).json({ message: "Invalid credentials ❌" });
 
     const token = jwt.sign(
       {
         id: user._id,
         username: user.username,
         role: user.role,
-        name: user.name // ✅ ADDED (useful later)
+        name: user.name
       },
       process.env.JWT_SECRET,
       { expiresIn: "2h" }
@@ -118,8 +117,42 @@ app.post("/login", async (req, res) => {
     res.json({
       token,
       role: user.role,
-      name: user.name // ✅ send name to frontend
+      name: user.name
     });
+
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// =============================
+// CHANGE PASSWORD (USER)
+// =============================
+app.post("/change-password", verifyToken, async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ message: "All fields required" });
+    }
+
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Old password incorrect ❌" });
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    user.password = hashed;
+
+    await user.save();
+
+    res.json({ message: "Password updated. Please login again 🔐" });
 
   } catch (err) {
     res.status(500).json({ message: "Server error" });
@@ -144,11 +177,11 @@ app.get("/admin/users", verifyToken, verifyAdmin, async (req, res) => {
 app.delete("/admin/user/:id", verifyToken, verifyAdmin, async (req, res) => {
   try {
     if (req.params.id === req.user.id) {
-      return res.json({ message: "You can't delete yourself" });
+      return res.json({ message: "You can't delete yourself ❌" });
     }
 
     await User.findByIdAndDelete(req.params.id);
-    res.json({ message: "Deleted" });
+    res.json({ message: "User deleted ✅" });
 
   } catch (err) {
     res.status(500).json({ message: "Error deleting user" });
