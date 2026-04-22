@@ -91,7 +91,7 @@ app.post("/register", async (req, res) => {
 });
 
 // =============================
-// LOGIN
+// LOGIN (✅ FIXED)
 // =============================
 app.post("/login", async (req, res) => {
   try {
@@ -114,10 +114,12 @@ app.post("/login", async (req, res) => {
       { expiresIn: "2h" }
     );
 
+    // ✅ FIX: send username also
     res.json({
       token,
       role: user.role,
-      name: user.name
+      name: user.name,
+      username: user.username
     });
 
   } catch (err) {
@@ -126,7 +128,7 @@ app.post("/login", async (req, res) => {
 });
 
 // =============================
-// CHANGE PASSWORD (USER)
+// CHANGE PASSWORD
 // =============================
 app.post("/change-password", verifyToken, async (req, res) => {
   try {
