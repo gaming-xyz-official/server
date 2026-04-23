@@ -22,7 +22,7 @@ mongoose.connect(process.env.MONGO_URI)
   .catch(err => console.log(err));
 
 // =============================
-// USER SCHEMA
+// USER SCHEMA (UPDATED)
 // =============================
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -31,6 +31,12 @@ const userSchema = new mongoose.Schema({
   role: {
     type: String,
     default: "user"
+  },
+
+  // 🔥 NEW: Scores per game
+  scores: {
+    game1: { type: Number, default: 0 },
+    game2: { type: Number, default: 0 }
   }
 });
 
@@ -46,7 +52,6 @@ function verifyToken(req, res, next) {
     return res.status(401).json({ message: "No token" });
   }
 
-  // ✅ IMPORTANT: Extract token after "Bearer "
   const token = header.split(" ")[1];
 
   if (!token) {
@@ -70,7 +75,7 @@ function verifyAdmin(req, res, next) {
 }
 
 // =============================
-// 🔥 VERIFY ROUTE (MOST IMPORTANT FIX)
+// VERIFY
 // =============================
 app.get("/verify", verifyToken, (req, res) => {
   res.json({
@@ -151,6 +156,61 @@ app.post("/login", async (req, res) => {
 });
 
 // =============================
+// 🔥 UPDATE SCORE (NEW)
+// =============================
+app.post("/update-score", verifyToken, async (req, res) => {
+  try {
+    const { game, score } = req.body;
+
+    if (!game || score === undefined) {
+      return res.status(400).json({ message: "Game and score required" });
+    }
+
+    const user = await User.findById(req.user.id);
+
+    if (!user.scores[game]) {
+      return res.status(400).json({ message: "Invalid game ❌" });
+    }
+
+    // ✅ Only update if better score
+    if (score > user.scores[game]) {
+      user.scores[game] = score;
+      await user.save();
+    }
+
+    res.json({ message: "Score updated ✅" });
+
+  } catch (err) {
+    res.status(500).json({ message: "Error updating score" });
+  }
+});
+
+// =============================
+// 🏆 LEADERBOARD (NEW)
+// =============================
+app.get("/leaderboard/:game", async (req, res) => {
+  try {
+    const game = req.params.game;
+
+    if (!["game1", "game2"].includes(game)) {
+      return res.status(400).json({ message: "Invalid game ❌" });
+    }
+
+    const users = await User.find(
+      {},
+      { username: 1, name: 1, [`scores.${game}`]: 1 }
+    )
+      .sort({ [`scores.${game}`]: -1 })
+      .limit(10);
+
+    res.json(users);
+
+  } catch (err) {
+    res.status(500).json({ message: "Error fetching leaderboard" });
+  }
+});
+
+// =============================
 // CHANGE PASSWORD
 // =============================
 app.post("/change-password", verifyToken, async (req, res) => {
@@ -162,9 +222,6 @@ app.post("/change-password", verifyToken, async (req, res) => {
     }
 
     const user = await User.findById(req.user.id);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
 
     const isMatch = await bcrypt.compare(oldPassword, user.password);
     if (!isMatch) {
@@ -176,7 +233,7 @@ app.post("/change-password", verifyToken, async (req, res) => {
 
     await user.save();
 
-    res.json({ message: "Password updated. Please login again 🔐" });
+    res.json({ message: "Password updated 🔐" });
 
   } catch (err) {
     res.status(500).json({ message: "Server error" });
@@ -186,18 +243,15 @@ app.post("/change-password", verifyToken, async (req, res) => {
 // =============================
 // ADMIN ROUTES
 // =============================
-
-// GET USERS
 app.get("/admin/users", verifyToken, verifyAdmin, async (req, res) => {
   try {
     const users = await User.find().select("-password");
     res.json(users);
-  } catch (err) {
+  } catch {
     res.status(500).json({ message: "Error fetching users" });
   }
 });
 
-// DELETE USER
 app.delete("/admin/user/:id", verifyToken, verifyAdmin, async (req, res) => {
   try {
     if (req.params.id === req.user.id) {
@@ -207,7 +261,7 @@ app.delete("/admin/user/:id", verifyToken, verifyAdmin, async (req, res) => {
     await User.findByIdAndDelete(req.params.id);
     res.json({ message: "User deleted ✅" });
 
-  } catch (err) {
+  } catch {
     res.status(500).json({ message: "Error deleting user" });
   }
 });
@@ -216,7 +270,7 @@ app.delete("/admin/user/:id", verifyToken, verifyAdmin, async (req, res) => {
 // ROOT
 // =============================
 app.get("/", (req, res) => {
-  res.send("Server running ✅");
+  res.send("Server running with leaderboard 🚀");
 });
 
 // =============================
