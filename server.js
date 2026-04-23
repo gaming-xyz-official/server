@@ -32,7 +32,6 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: "user"
   },
-
   scores: {
     game1: { type: Number, default: 0 },
     game2: { type: Number, default: 0 }
@@ -64,13 +63,6 @@ function verifyToken(req, res, next) {
     req.user = decoded;
     next();
   });
-}
-
-function verifyAdmin(req, res, next) {
-  if (req.user.role !== "admin") {
-    return res.status(403).json({ message: "Admin only" });
-  }
-  next();
 }
 
 // =============================
@@ -155,7 +147,7 @@ app.post("/login", async (req, res) => {
 });
 
 // =============================
-// 🔥 UPDATE SCORE (FIXED)
+// UPDATE SCORE
 // =============================
 app.post("/update-score", verifyToken, async (req, res) => {
   try {
@@ -167,12 +159,10 @@ app.post("/update-score", verifyToken, async (req, res) => {
 
     const user = await User.findById(req.user.id);
 
-    // ✅ FIXED: correct validation
     if (!(game in user.scores)) {
       return res.status(400).json({ message: "Invalid game ❌" });
     }
 
-    // ✅ update only if higher
     if (score > user.scores[game]) {
       user.scores[game] = score;
       await user.save();
@@ -186,7 +176,7 @@ app.post("/update-score", verifyToken, async (req, res) => {
 });
 
 // =============================
-// 🏆 LEADERBOARD
+// LEADERBOARD
 // =============================
 app.get("/leaderboard/:game", async (req, res) => {
   try {
@@ -207,6 +197,33 @@ app.get("/leaderboard/:game", async (req, res) => {
 
   } catch (err) {
     res.status(500).json({ message: "Error fetching leaderboard" });
+  }
+});
+
+// =============================
+// 🔥 GET MY BEST SCORE (FIX)
+// =============================
+app.get("/my-score/:game", verifyToken, async (req, res) => {
+  try {
+    const game = req.params.game;
+
+    if (!["game1", "game2"].includes(game)) {
+      return res.status(400).json({ message: "Invalid game ❌" });
+    }
+
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found ❌" });
+    }
+
+    const score = user.scores?.[game] || 0;
+
+    res.json({ score });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error fetching score" });
   }
 });
 
