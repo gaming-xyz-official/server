@@ -22,7 +22,7 @@ mongoose.connect(process.env.MONGO_URI)
   .catch(err => console.log(err));
 
 // =============================
-// USER SCHEMA (UPDATED)
+// USER SCHEMA
 // =============================
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -33,7 +33,6 @@ const userSchema = new mongoose.Schema({
     default: "user"
   },
 
-  // 🔥 NEW: Scores per game
   scores: {
     game1: { type: Number, default: 0 },
     game2: { type: Number, default: 0 }
@@ -156,7 +155,7 @@ app.post("/login", async (req, res) => {
 });
 
 // =============================
-// 🔥 UPDATE SCORE (NEW)
+// 🔥 UPDATE SCORE (FIXED)
 // =============================
 app.post("/update-score", verifyToken, async (req, res) => {
   try {
@@ -168,11 +167,12 @@ app.post("/update-score", verifyToken, async (req, res) => {
 
     const user = await User.findById(req.user.id);
 
-    if (!user.scores[game]) {
+    // ✅ FIXED: correct validation
+    if (!(game in user.scores)) {
       return res.status(400).json({ message: "Invalid game ❌" });
     }
 
-    // ✅ Only update if better score
+    // ✅ update only if higher
     if (score > user.scores[game]) {
       user.scores[game] = score;
       await user.save();
@@ -186,7 +186,7 @@ app.post("/update-score", verifyToken, async (req, res) => {
 });
 
 // =============================
-// 🏆 LEADERBOARD (NEW)
+// 🏆 LEADERBOARD
 // =============================
 app.get("/leaderboard/:game", async (req, res) => {
   try {
@@ -217,10 +217,6 @@ app.post("/change-password", verifyToken, async (req, res) => {
   try {
     const { oldPassword, newPassword } = req.body;
 
-    if (!oldPassword || !newPassword) {
-      return res.status(400).json({ message: "All fields required" });
-    }
-
     const user = await User.findById(req.user.id);
 
     const isMatch = await bcrypt.compare(oldPassword, user.password);
@@ -237,32 +233,6 @@ app.post("/change-password", verifyToken, async (req, res) => {
 
   } catch (err) {
     res.status(500).json({ message: "Server error" });
-  }
-});
-
-// =============================
-// ADMIN ROUTES
-// =============================
-app.get("/admin/users", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const users = await User.find().select("-password");
-    res.json(users);
-  } catch {
-    res.status(500).json({ message: "Error fetching users" });
-  }
-});
-
-app.delete("/admin/user/:id", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    if (req.params.id === req.user.id) {
-      return res.json({ message: "You can't delete yourself ❌" });
-    }
-
-    await User.findByIdAndDelete(req.params.id);
-    res.json({ message: "User deleted ✅" });
-
-  } catch {
-    res.status(500).json({ message: "Error deleting user" });
   }
 });
 
