@@ -28,10 +28,7 @@ const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   username: { type: String, unique: true },
   password: String,
-  role: {
-    type: String,
-    default: "user"
-  },
+  role: { type: String, default: "user" },
   scores: {
     game1: { type: Number, default: 0 },
     game2: { type: Number, default: 0 }
@@ -46,20 +43,13 @@ const User = mongoose.model("User", userSchema);
 function verifyToken(req, res, next) {
   const header = req.headers.authorization;
 
-  if (!header) {
-    return res.status(401).json({ message: "No token" });
-  }
+  if (!header) return res.status(401).json({ message: "No token" });
 
   const token = header.split(" ")[1];
-
-  if (!token) {
-    return res.status(401).json({ message: "Invalid token format" });
-  }
+  if (!token) return res.status(401).json({ message: "Invalid token format" });
 
   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err) {
-      return res.status(403).json({ message: "Invalid or expired token" });
-    }
+    if (err) return res.status(403).json({ message: "Invalid token" });
     req.user = decoded;
     next();
   });
@@ -69,10 +59,7 @@ function verifyToken(req, res, next) {
 // VERIFY
 // =============================
 app.get("/verify", verifyToken, (req, res) => {
-  res.json({
-    message: "Token valid ✅",
-    user: req.user
-  });
+  res.json({ user: req.user });
 });
 
 // =============================
@@ -82,13 +69,9 @@ app.post("/register", async (req, res) => {
   try {
     const { name, username, password } = req.body;
 
-    if (!name || !username || !password) {
-      return res.status(400).json({ message: "All fields required" });
-    }
-
     const existingUser = await User.findOne({ username });
     if (existingUser) {
-      return res.status(400).json({ message: "User already exists ❌" });
+      return res.status(400).json({ message: "User exists ❌" });
     }
 
     const hashed = await bcrypt.hash(password, 10);
@@ -96,12 +79,13 @@ app.post("/register", async (req, res) => {
     await User.create({
       name,
       username,
-      password: hashed
+      password: hashed,
+      role: username === "admin" ? "admin" : "user" // optional
     });
 
-    res.json({ message: "Registered successfully ✅" });
+    res.json({ message: "Registered ✅" });
 
-  } catch (err) {
+  } catch {
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -114,14 +98,10 @@ app.post("/login", async (req, res) => {
     const { username, password } = req.body;
 
     const user = await User.findOne({ username });
-    if (!user) {
-      return res.status(401).json({ message: "Invalid credentials ❌" });
-    }
+    if (!user) return res.status(401).json({ message: "Invalid ❌" });
 
     const match = await bcrypt.compare(password, user.password);
-    if (!match) {
-      return res.status(401).json({ message: "Invalid credentials ❌" });
-    }
+    if (!match) return res.status(401).json({ message: "Invalid ❌" });
 
     const token = jwt.sign(
       {
@@ -137,11 +117,10 @@ app.post("/login", async (req, res) => {
     res.json({
       token,
       role: user.role,
-      name: user.name,
-      username: user.username
+      name: user.name
     });
 
-  } catch (err) {
+  } catch {
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -152,10 +131,6 @@ app.post("/login", async (req, res) => {
 app.post("/update-score", verifyToken, async (req, res) => {
   try {
     const { game, score } = req.body;
-
-    if (!game || score === undefined) {
-      return res.status(400).json({ message: "Game and score required" });
-    }
 
     const user = await User.findById(req.user.id);
 
@@ -170,7 +145,7 @@ app.post("/update-score", verifyToken, async (req, res) => {
 
     res.json({ message: "Score updated ✅" });
 
-  } catch (err) {
+  } catch {
     res.status(500).json({ message: "Error updating score" });
   }
 });
@@ -182,10 +157,6 @@ app.get("/leaderboard/:game", async (req, res) => {
   try {
     const game = req.params.game;
 
-    if (!["game1", "game2"].includes(game)) {
-      return res.status(400).json({ message: "Invalid game ❌" });
-    }
-
     const users = await User.find(
       {},
       { username: 1, name: 1, [`scores.${game}`]: 1 }
@@ -195,35 +166,65 @@ app.get("/leaderboard/:game", async (req, res) => {
 
     res.json(users);
 
-  } catch (err) {
-    res.status(500).json({ message: "Error fetching leaderboard" });
+  } catch {
+    res.status(500).json({ message: "Error leaderboard" });
   }
 });
 
 // =============================
-// 🔥 GET MY BEST SCORE (FIX)
+// GET MY SCORE
 // =============================
 app.get("/my-score/:game", verifyToken, async (req, res) => {
   try {
-    const game = req.params.game;
-
-    if (!["game1", "game2"].includes(game)) {
-      return res.status(400).json({ message: "Invalid game ❌" });
-    }
-
     const user = await User.findById(req.user.id);
+    const score = user.scores?.[req.params.game] || 0;
+    res.json({ score });
+  } catch {
+    res.status(500).json({ message: "Error fetching score" });
+  }
+});
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found ❌" });
+// =============================
+// 🔥 ADMIN ROUTES
+// =============================
+
+// GET USERS
+app.get("/admin/users", verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Access denied ❌" });
     }
 
-    const score = user.scores?.[game] || 0;
+    const users = await User.find({}, {
+      name: 1,
+      username: 1,
+      role: 1
+    });
 
-    res.json({ score });
+    res.json(users);
 
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Error fetching score" });
+  } catch {
+    res.status(500).json({ message: "Error fetching users" });
+  }
+});
+
+// DELETE USER
+app.delete("/admin/user/:id", verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Access denied ❌" });
+    }
+
+    if (req.user.id === req.params.id) {
+      return res.status(400).json({ message: "Cannot delete yourself ❌" });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+
+    res.json({ message: "User deleted ✅" });
+
+  } catch {
+    res.status(500).json({ message: "Delete failed" });
   }
 });
 
@@ -231,40 +232,23 @@ app.get("/my-score/:game", verifyToken, async (req, res) => {
 // CHANGE PASSWORD
 // =============================
 app.post("/change-password", verifyToken, async (req, res) => {
-  try {
-    const { oldPassword, newPassword } = req.body;
+  const user = await User.findById(req.user.id);
+  const match = await bcrypt.compare(req.body.oldPassword, user.password);
 
-    const user = await User.findById(req.user.id);
+  if (!match) return res.status(400).json({ message: "Wrong password ❌" });
 
-    const isMatch = await bcrypt.compare(oldPassword, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: "Old password incorrect ❌" });
-    }
+  user.password = await bcrypt.hash(req.body.newPassword, 10);
+  await user.save();
 
-    const hashed = await bcrypt.hash(newPassword, 10);
-    user.password = hashed;
-
-    await user.save();
-
-    res.json({ message: "Password updated 🔐" });
-
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
-  }
+  res.json({ message: "Updated 🔐" });
 });
 
-// =============================
-// ROOT
 // =============================
 app.get("/", (req, res) => {
-  res.send("Server running with leaderboard 🚀");
+  res.send("Server running 🚀");
 });
 
 // =============================
-// START SERVER
-// =============================
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log(`Server started on port ${PORT} 🚀`);
+app.listen(process.env.PORT || 3000, () => {
+  console.log("Server started 🚀");
 });
