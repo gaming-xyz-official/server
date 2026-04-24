@@ -6,7 +6,22 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
 
+// 🔐 NEW SECURITY IMPORTS
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
+
 const app = express();
+
+// =============================
+// 🔐 SECURITY MIDDLEWARE
+// =============================
+app.use(helmet());
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100
+});
+app.use(limiter);
 
 // =============================
 // MIDDLEWARE
@@ -48,11 +63,13 @@ function verifyToken(req, res, next) {
   const token = header.split(" ")[1];
   if (!token) return res.status(401).json({ message: "Invalid token format" });
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err) return res.status(403).json({ message: "Invalid token" });
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
     next();
-  });
+  } catch (err) {
+    return res.status(403).json({ message: "Invalid or expired token" });
+  }
 }
 
 // =============================
@@ -69,6 +86,10 @@ app.post("/register", async (req, res) => {
   try {
     const { name, username, password } = req.body;
 
+    if (!name || !username || !password) {
+      return res.status(400).json({ message: "All fields required ❌" });
+    }
+
     const existingUser = await User.findOne({ username });
     if (existingUser) {
       return res.status(400).json({ message: "User exists ❌" });
@@ -80,12 +101,12 @@ app.post("/register", async (req, res) => {
       name,
       username,
       password: hashed,
-      role: username === "admin" ? "admin" : "user" // optional
+      role: username === "admin" ? "admin" : "user"
     });
 
     res.json({ message: "Registered ✅" });
 
-  } catch {
+  } catch (err) {
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -96,6 +117,10 @@ app.post("/register", async (req, res) => {
 app.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ message: "Missing credentials ❌" });
+    }
 
     const user = await User.findOne({ username });
     if (!user) return res.status(401).json({ message: "Invalid ❌" });
@@ -111,7 +136,7 @@ app.post("/login", async (req, res) => {
         name: user.name
       },
       process.env.JWT_SECRET,
-      { expiresIn: "2h" }
+      { expiresIn: "1h" } // 🔥 reduced from 2h
     );
 
     res.json({
@@ -134,7 +159,7 @@ app.post("/update-score", verifyToken, async (req, res) => {
 
     const user = await User.findById(req.user.id);
 
-    if (!(game in user.scores)) {
+    if (!user || !(game in user.scores)) {
       return res.status(400).json({ message: "Invalid game ❌" });
     }
 
@@ -177,7 +202,7 @@ app.get("/leaderboard/:game", async (req, res) => {
 app.get("/my-score/:game", verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    const score = user.scores?.[req.params.game] || 0;
+    const score = user?.scores?.[req.params.game] || 0;
     res.json({ score });
   } catch {
     res.status(500).json({ message: "Error fetching score" });
@@ -187,8 +212,6 @@ app.get("/my-score/:game", verifyToken, async (req, res) => {
 // =============================
 // 🔥 ADMIN ROUTES
 // =============================
-
-// GET USERS
 app.get("/admin/users", verifyToken, async (req, res) => {
   try {
     if (req.user.role !== "admin") {
@@ -208,7 +231,6 @@ app.get("/admin/users", verifyToken, async (req, res) => {
   }
 });
 
-// DELETE USER
 app.delete("/admin/user/:id", verifyToken, async (req, res) => {
   try {
     if (req.user.role !== "admin") {
@@ -232,15 +254,20 @@ app.delete("/admin/user/:id", verifyToken, async (req, res) => {
 // CHANGE PASSWORD
 // =============================
 app.post("/change-password", verifyToken, async (req, res) => {
-  const user = await User.findById(req.user.id);
-  const match = await bcrypt.compare(req.body.oldPassword, user.password);
+  try {
+    const user = await User.findById(req.user.id);
 
-  if (!match) return res.status(400).json({ message: "Wrong password ❌" });
+    const match = await bcrypt.compare(req.body.oldPassword, user.password);
+    if (!match) return res.status(400).json({ message: "Wrong password ❌" });
 
-  user.password = await bcrypt.hash(req.body.newPassword, 10);
-  await user.save();
+    user.password = await bcrypt.hash(req.body.newPassword, 10);
+    await user.save();
 
-  res.json({ message: "Updated 🔐" });
+    res.json({ message: "Updated 🔐" });
+
+  } catch {
+    res.status(500).json({ message: "Error updating password" });
+  }
 });
 
 // =============================
