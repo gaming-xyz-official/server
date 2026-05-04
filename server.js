@@ -6,7 +6,6 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
 
-// 🔐 NEW SECURITY IMPORTS
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 
@@ -90,6 +89,11 @@ app.post("/register", async (req, res) => {
       return res.status(400).json({ message: "All fields required ❌" });
     }
 
+    // ✅ NEW: Basic password validation
+    if (password.length < 6) {
+      return res.status(400).json({ message: "Password must be at least 6 characters ❌" });
+    }
+
     const existingUser = await User.findOne({ username });
     if (existingUser) {
       return res.status(400).json({ message: "User exists ❌" });
@@ -101,7 +105,7 @@ app.post("/register", async (req, res) => {
       name,
       username,
       password: hashed,
-      role: username === "admin" ? "admin" : "user"
+      role: "user" // 🔥 FIXED: No auto admin
     });
 
     res.json({ message: "Registered ✅" });
@@ -136,7 +140,7 @@ app.post("/login", async (req, res) => {
         name: user.name
       },
       process.env.JWT_SECRET,
-      { expiresIn: "1h" } // 🔥 reduced from 2h
+      { expiresIn: "1h" }
     );
 
     res.json({
