@@ -11,9 +11,6 @@ const rateLimit = require("express-rate-limit");
 
 const app = express();
 
-// =============================
-// 🔐 SECURITY MIDDLEWARE
-// =============================
 app.use(helmet());
 
 const limiter = rateLimit({
@@ -22,22 +19,13 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// =============================
-// MIDDLEWARE
-// =============================
 app.use(express.json());
 app.use(cors());
 
-// =============================
-// CONNECT DB
-// =============================
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Connected ✅"))
   .catch(err => console.log(err));
 
-// =============================
-// USER SCHEMA
-// =============================
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   username: { type: String, unique: true },
@@ -51,9 +39,6 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model("User", userSchema);
 
-// =============================
-// AUTH MIDDLEWARE
-// =============================
 function verifyToken(req, res, next) {
   const header = req.headers.authorization;
 
@@ -71,16 +56,10 @@ function verifyToken(req, res, next) {
   }
 }
 
-// =============================
-// VERIFY
-// =============================
 app.get("/verify", verifyToken, (req, res) => {
   res.json({ user: req.user });
 });
 
-// =============================
-// REGISTER
-// =============================
 app.post("/register", async (req, res) => {
   try {
     const { name, username, password } = req.body;
@@ -89,7 +68,6 @@ app.post("/register", async (req, res) => {
       return res.status(400).json({ message: "All fields required ❌" });
     }
 
-    // ✅ NEW: Basic password validation
     if (password.length < 6) {
       return res.status(400).json({ message: "Password must be at least 6 characters ❌" });
     }
@@ -105,7 +83,7 @@ app.post("/register", async (req, res) => {
       name,
       username,
       password: hashed,
-      role: "user" // 🔥 FIXED: No auto admin
+      role: "user"
     });
 
     res.json({ message: "Registered ✅" });
@@ -115,9 +93,6 @@ app.post("/register", async (req, res) => {
   }
 });
 
-// =============================
-// LOGIN
-// =============================
 app.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -154,9 +129,6 @@ app.post("/login", async (req, res) => {
   }
 });
 
-// =============================
-// UPDATE SCORE
-// =============================
 app.post("/update-score", verifyToken, async (req, res) => {
   try {
     const { game, score } = req.body;
@@ -179,9 +151,6 @@ app.post("/update-score", verifyToken, async (req, res) => {
   }
 });
 
-// =============================
-// LEADERBOARD
-// =============================
 app.get("/leaderboard/:game", async (req, res) => {
   try {
     const game = req.params.game;
@@ -200,9 +169,6 @@ app.get("/leaderboard/:game", async (req, res) => {
   }
 });
 
-// =============================
-// GET MY SCORE
-// =============================
 app.get("/my-score/:game", verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -213,9 +179,6 @@ app.get("/my-score/:game", verifyToken, async (req, res) => {
   }
 });
 
-// =============================
-// 🔥 ADMIN ROUTES
-// =============================
 app.get("/admin/users", verifyToken, async (req, res) => {
   try {
     if (req.user.role !== "admin") {
@@ -254,9 +217,6 @@ app.delete("/admin/user/:id", verifyToken, async (req, res) => {
   }
 });
 
-// =============================
-// CHANGE PASSWORD
-// =============================
 app.post("/change-password", verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -274,12 +234,10 @@ app.post("/change-password", verifyToken, async (req, res) => {
   }
 });
 
-// =============================
 app.get("/", (req, res) => {
   res.send("Server running 🚀");
 });
 
-// =============================
 app.listen(process.env.PORT || 3000, () => {
   console.log("Server started 🚀");
 });
